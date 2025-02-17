@@ -9424,30 +9424,45 @@ int64_t llama_time_us(void) {
     return ggml_time_us();
 }
 
+struct loading_progress_ctx {
+    int64_t t_load_start_us;
+    unsigned int cur_percentage;
+    llama_model const* model;
+};
+
 static struct llama_model * llama_model_load_from_file_impl(
         const std::string & path_model,
         std::vector<std::string> & splits,
         struct llama_model_params params) {
     ggml_time_init();
+    auto const t_load_start_us = ggml_time_us();
 
-    unsigned cur_percentage = 0;
+    llama_model * model = new llama_model(params);
+
+    loading_progress_ctx default_progress_ctx = { t_load_start_us, 0, model };
+    // Setup default progress callback
     if (params.progress_callback == NULL) {
-        params.progress_callback_user_data = &cur_percentage;
-        params.progress_callback = [](float progress, void * ctx) {
-            unsigned * cur_percentage_p = (unsigned *) ctx;
+        model->params.progress_callback_user_data = &default_progress_ctx;
+        model->params.progress_callback = [](float progress, void * ctx) -> bool {
+            loading_progress_ctx * progress_ctx = (loading_progress_ctx *) ctx;
             unsigned percentage = (unsigned) (100 * progress);
-            while (percentage > *cur_percentage_p) {
-                *cur_percentage_p = percentage;
-                LLAMA_LOG_CONT(".");
+            while (percentage > progress_ctx->cur_percentage) {
+                progress_ctx->cur_percentage = percentage;
+                const auto t_now_us = ggml_time_us();
+                const float t_elapsed_s = (t_now_us - progress_ctx->t_load_start_us) / 1e6f;
+                auto const model_size_bytes = progress_ctx->model->size();
+                const float throughput_mb_s = (progress * model_size_bytes / t_elapsed_s) / (1024.0f * 1024.0f);
+                auto const remaining_bytes = (1-progress)*model_size_bytes;
+                const float remaining_mb = remaining_bytes / (1024.0f * 1024.0f);
+                const float remaining_time_s = remaining_mb / throughput_mb_s;
+                LLAMA_LOG_CONT("Loading: %u%%, %.0f MiB/s, ETA: %.0f s\r", percentage, throughput_mb_s, remaining_time_s);
                 if (percentage >= 100) {
-                    LLAMA_LOG_CONT("\n");
+                    LLAMA_LOG_CONT("\nLoading complete\n");
                 }
             }
             return true;
         };
-    }
-
-    llama_model * model = new llama_model(params);
+    }    
 
     // create list of devices to use with this model
     if (params.devices) {
@@ -9511,6 +9526,9 @@ static struct llama_model * llama_model_load_from_file_impl(
         llama_model_free(model);
         return nullptr;
     }
+
+    float t_load_time_s = (ggml_time_us() - t_load_start_us) / 1e6f;
+    LLAMA_LOG_INFO("Model loading took %.3f s\n", t_load_time_s);
 
     return model;
 }
