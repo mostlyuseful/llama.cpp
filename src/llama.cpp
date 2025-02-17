@@ -307,15 +307,46 @@ static bool llama_prepare_model_devices(const llama_model_params & params, llama
     return true;
 }
 
+struct loading_progress_ctx {
+    int64_t t_load_start_us;
+    unsigned int cur_percentage;
+    const llama_model * model;
+};
+
 // Returns 0 on success, -1 on error, and -2 on cancellation via llama_progress_callback
 static std::pair<int, llama_model *> llama_model_load(struct gguf_context * metadata, llama_model_set_tensor_data_t set_tensor_data, void * set_tensor_data_ud,
         const std::string & fname, std::vector<std::string> & splits, FILE * file, llama_model_params & params) {
     try {
+        loading_progress_ctx default_progress_ctx = { ggml_time_us(), 0, nullptr };
+        if (params.progress_callback == NULL) {
+            params.progress_callback_user_data = &default_progress_ctx;
+            params.progress_callback = [](float progress, void * ctx) -> bool {
+                auto * progress_ctx = (loading_progress_ctx *) ctx;
+                unsigned percentage = (unsigned) (100 * progress);
+                while (percentage > progress_ctx->cur_percentage) {
+                    progress_ctx->cur_percentage = percentage;
+                    const auto t_now_us = ggml_time_us();
+                    const float t_elapsed_s = (t_now_us - progress_ctx->t_load_start_us) / 1e6f;
+                    const auto model_size_bytes = progress_ctx->model ? progress_ctx->model->size() : 0;
+                    const float throughput_mb_s = t_elapsed_s > 0.0f ? (progress * model_size_bytes / t_elapsed_s) / (1024.0f * 1024.0f) : 0.0f;
+                    const auto remaining_bytes = (1.0f - progress) * model_size_bytes;
+                    const float remaining_mb = remaining_bytes / (1024.0f * 1024.0f);
+                    const float remaining_time_s = throughput_mb_s > 0.0f ? remaining_mb / throughput_mb_s : 0.0f;
+                    LLAMA_LOG_CONT("Loading: %u%%, %.0f MiB/s, ETA: %.0f s\r", percentage, throughput_mb_s, remaining_time_s);
+                    if (percentage >= 100) {
+                        LLAMA_LOG_CONT("\nLoading complete\n");
+                    }
+                }
+                return true;
+            };
+        }
+
         llama_model_loader ml(metadata, set_tensor_data, set_tensor_data_ud, fname, splits, file, params.load_mode,
             params.check_tensors, params.no_alloc, params.load_mtp, params.kv_overrides, params.tensor_buft_overrides);
 
         ml.print_info();
         std::unique_ptr<llama_model> model_ptr(llama_model_create(ml, params));
+        default_progress_ctx.model = model_ptr.get();
 
         bool ok = llama_prepare_model_devices(params, model_ptr.get());
         if (!ok) {
@@ -401,22 +432,7 @@ static struct llama_model * llama_model_load_from_file_impl(
         return nullptr;
     }
 
-    unsigned cur_percentage = 0;
-    if (params.progress_callback == NULL) {
-        params.progress_callback_user_data = &cur_percentage;
-        params.progress_callback = [](float progress, void * ctx) {
-            unsigned * cur_percentage_p = (unsigned *) ctx;
-            unsigned percentage = (unsigned) (100 * progress);
-            while (percentage > *cur_percentage_p) {
-                *cur_percentage_p = percentage;
-                LLAMA_LOG_CONT(".");
-                if (percentage >= 100) {
-                    LLAMA_LOG_CONT("\n");
-                }
-            }
-            return true;
-        };
-    }
+    const auto t_load_start_us = ggml_time_us();
 
     const auto [status, model] = llama_model_load(metadata, set_tensor_data, set_tensor_data_ud, path_model, splits, file, params);
     GGML_ASSERT(status <= 0);
@@ -432,6 +448,9 @@ static struct llama_model * llama_model_load_from_file_impl(
         }
         return nullptr;
     }
+
+    float t_load_time_s = (ggml_time_us() - t_load_start_us) / 1e6f;
+    LLAMA_LOG_INFO("Model loading took %.3f s\n", t_load_time_s);
 
     return model;
 }
