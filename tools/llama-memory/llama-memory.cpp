@@ -27,6 +27,9 @@ int main(int argc, char ** argv) {
     llama_backend_init();
     llama_numa_init(params.numa);
 
+    ggml_log_callback old_log_cb;
+    void * old_log_data;
+    llama_log_get(&old_log_cb, &old_log_data);
     llama_log_set(silent_log, nullptr);
 
     llama_model * model = llama_model_load_from_file(params.model.path.c_str(), mparams);
@@ -42,7 +45,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    common_init(); 
+    llama_log_set(old_log_cb, old_log_data);
 
     constexpr size_t MAX_DEVS = 64;
     llama_memory_breakdown bk[MAX_DEVS];
