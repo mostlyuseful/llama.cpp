@@ -1589,6 +1589,28 @@ extern "C" {
     LLAMA_API void                           llama_perf_sampler_print(const struct llama_sampler * chain);
     LLAMA_API void                           llama_perf_sampler_reset(      struct llama_sampler * chain);
 
+    // Per-device memory breakdown result
+    struct llama_memory_breakdown {
+        char     name[128];   // device name, e.g. "CUDA0 (RTX 4090)" or "Host"
+        uint64_t model;       // model weight bytes on this device
+        uint64_t context;     // KV-cache bytes on this device
+        uint64_t compute;     // compute buffer bytes on this device
+        uint64_t free;        // device free memory (0 for host)
+        uint64_t total;       // device total memory (0 for host)
+        bool     is_gpu;      // true if dedicated GPU memory
+    };
+
+    // Fills `out` (caller-allocated, `*n_out` capacity) with per-device breakdown.
+    // Sets *n_out to the number of entries written (GPU devices + 1 host entry).
+    // Requires a fully-initialized llama_context (created with no_alloc=true is fine).
+    LLAMA_API void llama_memory_breakdown_get(
+        const struct llama_context        * ctx,
+              struct llama_memory_breakdown * out,
+              size_t                        * n_out);
+
+    // print a breakdown of per-device memory use via LLAMA_LOG:
+    LLAMA_API void llama_memory_breakdown_print(const struct llama_context * ctx);
+
     //
     // training
     //
