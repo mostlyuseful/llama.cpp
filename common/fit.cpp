@@ -72,7 +72,7 @@ static std::vector<llama_device_memory_data> common_get_device_memory_data_impl(
     const size_t nd = llama_model_n_devices(model);
     std::vector<llama_device_memory_data> ret(nd + 1);
 
-    llama_memory_breakdown memory_breakdown = llama_get_memory_breakdown(ctx);
+    llama_memory_breakdown_map memory_breakdown = llama_get_memory_breakdown(ctx);
 
     for (const auto & [buft, mb] : memory_breakdown) {
         if (ggml_backend_buft_is_host(buft)) {
@@ -823,7 +823,7 @@ void common_memory_breakdown_print(const struct llama_context * ctx) {
         devices.push_back(llama_model_get_device(model, i));
     }
 
-    llama_memory_breakdown memory_breakdown = llama_get_memory_breakdown(ctx);
+    llama_memory_breakdown_map memory_breakdown = llama_get_memory_breakdown(ctx);
 
     std::vector<std::array<std::string, 9>> table_data;
     table_data.reserve(devices.size());

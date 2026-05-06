@@ -81,14 +81,14 @@ struct llama_device_memory_data {
 };
 
 // TODO: convert to C-style data structure
-using llama_memory_breakdown = std::map<ggml_backend_buffer_type_t, llama_memory_breakdown_data>;
+using llama_memory_breakdown_map = std::map<ggml_backend_buffer_type_t, llama_memory_breakdown_data>;
 
 LLAMA_API int32_t llama_model_n_expert (const struct llama_model * model);
 LLAMA_API int32_t llama_model_n_devices(const struct llama_model * model);
 
 LLAMA_API ggml_backend_dev_t llama_model_get_device(const struct llama_model * model, int i);
 
-LLAMA_API llama_memory_breakdown llama_get_memory_breakdown(const struct llama_context * ctx);
+LLAMA_API llama_memory_breakdown_map llama_get_memory_breakdown(const struct llama_context * ctx);
 
 // Set whether the context outputs nextn embeddings or not
 // If masked == true,  output the embeddings only for the tokens with batch.logits != 0
