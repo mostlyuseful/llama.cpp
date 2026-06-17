@@ -80,6 +80,8 @@ add_library(${TARGET}
     http.h
     imatrix-loader.cpp
     imatrix-loader.h
+    inline-tools.cpp
+    inline-tools.h
     json-partial.cpp
     json-partial.h
     json-schema-to-grammar.cpp

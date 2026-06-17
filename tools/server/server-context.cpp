@@ -8,6 +8,7 @@
 #include "build-info.h"
 #include "common.h"
 #include "fit.h"
+#include "inline-tools.h"
 #include "llama.h"
 #include "log.h"
 #include "sampling.h"
@@ -52,6 +53,45 @@ static uint32_t server_n_outputs_max(const common_params & params) {
     return std::max<uint32_t>(1, std::min<uint64_t>(n_batch, n_outputs));
 }
 
+static bool server_speculative_enabled(const common_params_speculative & speculative) {
+    if (speculative.has_dft()) {
+        return true;
+    }
+
+    return std::any_of(speculative.types.begin(), speculative.types.end(), [](common_speculative_type type) {
+        return type != COMMON_SPECULATIVE_TYPE_NONE;
+    });
+}
+
+static bool server_inline_tools_request_has_constraints(const json & data) {
+    const std::string grammar = json_value(data, "grammar", std::string());
+    if (!grammar.empty()) {
+        return true;
+    }
+
+    if (data.contains("json_schema") && !data.at("json_schema").is_null()) {
+        return true;
+    }
+
+    if (data.contains("response_format") && !data.at("response_format").is_null()) {
+        const json response_format = json_value(data, "response_format", json::object());
+        const std::string response_type = json_value(response_format, "type", std::string());
+        if (!response_type.empty() && response_type != "text") {
+            return true;
+        }
+    }
+
+    const json tools = json_value(data, "tools", json());
+    if (tools.is_array() && !tools.empty()) {
+        const json tool_choice = json_value(data, "tool_choice", json("auto"));
+        if (!(tool_choice.is_string() && tool_choice.get<std::string>() == "none")) {
+            return true;
+        }
+    }
+
+    return json_value(data, "backend_sampling", false);
+}
+
 // state diagram: https://github.com/ggml-org/llama.cpp/pull/9283
 enum slot_state {
     SLOT_STATE_IDLE,
@@ -65,6 +105,13 @@ enum slot_state {
 enum server_state {
     SERVER_STATE_LOADING_MODEL,  // Server is starting up, model not fully loaded yet
     SERVER_STATE_READY,          // Server is ready and model is loaded
+};
+
+enum class inline_process_status {
+    PASSTHROUGH_CONTINUE,
+    PASSTHROUGH_STOP,
+    INTERCEPT_CONTINUE,
+    INTERCEPT_STOP,
 };
 
 struct server_slot {
@@ -186,6 +233,12 @@ struct server_slot {
 
     llama_token sampled; // in speculative mode, this is the last accepted token
 
+    // experimental inline regex tool interception
+    std::unique_ptr<inline_tool_interceptor> inline_tools;
+    llama_tokens inline_replay_tokens;
+    std::string inline_replay_visible_text;
+    bool inline_replay_active = false;
+
     // stats
     size_t n_sent_text = 0; // number of sent text character
 
@@ -225,6 +278,10 @@ struct server_slot {
         generated_tokens.clear();
         generated_token_probs.clear();
         json_schema = json();
+        inline_tools.reset();
+        inline_replay_tokens.clear();
+        inline_replay_visible_text.clear();
+        inline_replay_active = false;
 
         // clear speculative decoding stats
         n_draft_total = 0;
@@ -1003,6 +1060,23 @@ private:
 
         vocab = llama_model_get_vocab(model_tgt);
 
+        if (params_base.experimental_inline_tools) {
+            const bool incompatible =
+                llama_model_is_recurrent(model_tgt) ||
+                llama_model_is_hybrid(model_tgt) ||
+                llama_model_is_diffusion(model_tgt) ||
+                server_speculative_enabled(params_base.speculative) ||
+                params_base.sampling.backend_sampling ||
+                !params_base.sampling.grammar.empty();
+
+            if (incompatible) {
+                SRV_ERR("%s\n", "--experimental-inline-tools is incompatible with recurrent, hybrid, diffusion, speculative, backend-sampling, and grammar-constrained generation in this POC");
+                return false;
+            }
+
+            SRV_INF("%s\n", "inline-tools: enabled");
+        }
+
         n_ctx = llama_n_ctx(ctx_tgt);
 
         add_bos_token = llama_vocab_get_add_bos(vocab);
@@ -1140,6 +1214,10 @@ private:
 
         ctx_tgt_seq_rm_type = common_context_can_seq_rm(ctx_tgt);
         if (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_NO) {
+            if (params_base.experimental_inline_tools) {
+                SRV_ERR("%s\n", "--experimental-inline-tools is incompatible with contexts that cannot remove generated suffixes in this POC");
+                return false;
+            }
             SRV_WRN("%s", "speculative decoding not supported by this context\n");
         }
 
@@ -1635,6 +1713,10 @@ private:
             slot.smpl.reset();
         }
 
+        if (params_base.experimental_inline_tools && task.need_sampling()) {
+            slot.inline_tools = std::make_unique<inline_tool_interceptor>();
+        }
+
         slot.task = std::make_unique<const server_task>(std::move(task));
 
         slot.state = slot.task->is_child()
@@ -1648,13 +1730,15 @@ private:
         return true;
     }
 
-    bool process_token(completion_token_output & result, server_slot & slot) {
+    bool process_token(completion_token_output & result, server_slot & slot, bool update_sampled = true, bool check_eog = true, bool add_return_token = true) {
         // remember which tokens were sampled - used for repetition penalties during sampling
         const std::string token_str = result.text_to_send;
-        slot.sampled = result.tok;
+        if (update_sampled) {
+            slot.sampled = result.tok;
+        }
 
         slot.generated_text += token_str;
-        if (slot.task->params.return_tokens) {
+        if (add_return_token && slot.task->params.return_tokens) {
             slot.generated_tokens.push_back(result.tok);
         }
         slot.has_next_token = true;
@@ -1767,7 +1851,7 @@ private:
             }
         }
 
-        if (llama_vocab_is_eog(vocab, result.tok)) {
+        if (check_eog && llama_vocab_is_eog(vocab, result.tok)) {
             slot.stop           = STOP_TYPE_EOS;
             slot.has_next_token = false;
 
@@ -1777,6 +1861,112 @@ private:
         SLT_DBG(slot, "n_decoded = %d, n_remaining = %d, next token: %5d '%s'\n", slot.n_decoded, slot.n_remaining, result.tok, token_str.c_str());
 
         return slot.has_next_token; // continue
+    }
+
+    inline_process_status process_inline_tool_token(completion_token_output & result, server_slot & slot, common_sampler_ptr sampler_before) {
+        GGML_ASSERT(slot.inline_tools);
+
+        slot.inline_tools->push(result.tok, slot.prompt.tokens.pos_next(), result.text_to_send, std::move(sampler_before));
+
+        inline_tool_match match;
+        try {
+            match = slot.inline_tools->poll();
+        } catch (const std::exception & e) {
+            send_error(slot, e.what(), ERROR_TYPE_SERVER);
+            slot.has_next_token = false;
+            return inline_process_status::INTERCEPT_STOP;
+        }
+
+        if (!match.matched) {
+            result.text_to_send = slot.inline_tools->flush_safe_prefix();
+            return process_token(result, slot)
+                ? inline_process_status::PASSTHROUGH_CONTINUE
+                : inline_process_status::PASSTHROUGH_STOP;
+        }
+
+        SRV_INF("inline-tools: matched tool byte_range=[%zu,%zu) token_range=[%zu,%zu)\n",
+                match.byte_begin, match.byte_end, match.token_begin, match.token_end);
+
+        if (!match.sampler_before) {
+            send_error(slot, "inline rollback error: missing sampler snapshot", ERROR_TYPE_SERVER);
+            slot.has_next_token = false;
+            return inline_process_status::INTERCEPT_STOP;
+        }
+
+        if (!llama_memory_seq_rm(llama_get_memory(slot.ctx_tgt), slot.id, match.pos_begin, -1)) {
+            SRV_ERR("%s\n", "inline-tools: rollback failed");
+            send_error(slot, "inline rollback error", ERROR_TYPE_SERVER);
+            slot.has_next_token = false;
+            return inline_process_status::INTERCEPT_STOP;
+        }
+        if (slot.ctx_dft) {
+            llama_memory_seq_rm(llama_get_memory(slot.ctx_dft), slot.id, match.pos_begin, -1);
+        }
+
+        const size_t keep = slot.prompt.tokens.size_up_to_pos(match.pos_begin);
+        slot.prompt.tokens.keep_first(keep);
+
+        slot.smpl = std::move(match.sampler_before);
+
+        llama_tokens replacement_tokens;
+        try {
+            replacement_tokens = common_tokenize(vocab, match.replacement_text, false, false);
+        } catch (const std::exception & e) {
+            send_error(slot, std::string("inline replacement tokenization error: ") + e.what(), ERROR_TYPE_SERVER);
+            slot.has_next_token = false;
+            return inline_process_status::INTERCEPT_STOP;
+        }
+
+        if (replacement_tokens.empty() && !match.replacement_text.empty()) {
+            send_error(slot, "inline replacement tokenization error: empty token list", ERROR_TYPE_SERVER);
+            slot.has_next_token = false;
+            return inline_process_status::INTERCEPT_STOP;
+        }
+
+        const size_t n_raw = match.token_end - match.token_begin;
+        slot.n_decoded = std::max<int32_t>(0, slot.n_decoded - (int32_t) n_raw);
+        slot.n_decoded += (int32_t) replacement_tokens.size();
+
+        if (slot.task->params.return_tokens) {
+            const size_t n_remove = std::min(n_raw, slot.generated_tokens.size());
+            slot.generated_tokens.resize(slot.generated_tokens.size() - n_remove);
+            slot.generated_tokens.insert(slot.generated_tokens.end(), replacement_tokens.begin(), replacement_tokens.end());
+        }
+        {
+            const size_t n_remove = std::min(n_raw, slot.generated_token_probs.size());
+            slot.generated_token_probs.resize(slot.generated_token_probs.size() - n_remove);
+        }
+
+        slot.inline_replay_tokens = std::move(replacement_tokens);
+        slot.inline_replay_visible_text = match.replacement_text;
+        slot.inline_replay_active = !slot.inline_replay_tokens.empty();
+        slot.i_batch = -1;
+        slot.inline_tools->clear_after_match();
+
+        SRV_INF("inline-tools: rollback pos_begin=%d replacement_tokens=%zu\n",
+                match.pos_begin, slot.inline_replay_tokens.size());
+
+        completion_token_output visible;
+        visible.tok = slot.inline_replay_tokens.empty() ? LLAMA_TOKEN_NULL : slot.inline_replay_tokens.front();
+        visible.text_to_send = slot.inline_replay_visible_text;
+        visible.prob = 1.0f;
+
+        return process_token(visible, slot, false, false, false)
+            ? inline_process_status::INTERCEPT_CONTINUE
+            : inline_process_status::INTERCEPT_STOP;
+    }
+
+    void flush_inline_tools_pending(server_slot & slot) {
+        if (!slot.inline_tools || slot.inline_tools->pending().empty()) {
+            return;
+        }
+
+        completion_token_output visible;
+        visible.tok = LLAMA_TOKEN_NULL;
+        visible.text_to_send = slot.inline_tools->pending();
+        visible.prob = 1.0f;
+        slot.inline_tools->clear();
+        process_token(visible, slot, false, false, false);
     }
 
     void populate_token_probs(const server_slot & slot, completion_token_output & result, bool post_sampling, bool special, int idx) const {
@@ -1915,6 +2105,8 @@ private:
     }
 
     void send_final_response(server_slot & slot) {
+        flush_inline_tools_pending(slot);
+
         auto res = std::make_unique<server_task_result_cmpl_final>();
 
         res->id      = slot.task->id;
@@ -2706,6 +2898,30 @@ private:
         for (auto * slot_ptr : generating) {
             auto & slot = *slot_ptr;
 
+            if (slot.inline_replay_active) {
+                slot.i_batch = -1;
+                while (!slot.inline_replay_tokens.empty() && batch.n_tokens < (int32_t) llama_n_batch(ctx_tgt)) {
+                    const llama_token tok = slot.inline_replay_tokens.front();
+                    slot.inline_replay_tokens.erase(slot.inline_replay_tokens.begin());
+                    const bool is_last = slot.inline_replay_tokens.empty();
+
+                    if (is_last) {
+                        slot.i_batch = batch.n_tokens;
+                    }
+
+                    common_batch_add(batch, tok, slot.prompt.tokens.pos_next(), { slot.id }, is_last);
+                    slot.prompt.tokens.push_back(tok);
+                    common_sampler_accept(slot.smpl.get(), tok, true);
+                }
+
+                if (slot.inline_replay_tokens.empty()) {
+                    slot.inline_replay_active = false;
+                    slot.inline_replay_visible_text.clear();
+                }
+
+                continue;
+            }
+
             slot.update_batch(batch);
         }
 
@@ -3444,6 +3660,11 @@ private:
 
                 slot.i_batch = -1;
 
+                common_sampler_ptr sampler_before;
+                if (slot.inline_tools) {
+                    sampler_before.reset(common_sampler_clone(slot.smpl.get()));
+                }
+
                 common_sampler_accept(slot.smpl.get(), id, true);
 
                 // here we have synchronized the llama_context (due to the sampling above), so we can do time measurement
@@ -3466,6 +3687,21 @@ private:
 
                 if (slot.task->params.sampling.n_probs > 0) {
                     populate_token_probs(slot, result, slot.task->params.post_sampling_probs, params_base.special, tok_idx);
+                }
+
+                if (slot.inline_tools) {
+                    const inline_process_status status = process_inline_tool_token(result, slot, std::move(sampler_before));
+                    if (status == inline_process_status::PASSTHROUGH_STOP || status == inline_process_status::INTERCEPT_STOP) {
+                        // release slot because of stop condition
+                        slot.print_timings();
+                        send_final_response(slot);
+                        metrics.on_prediction(slot);
+                        slot.release();
+
+                        continue;
+                    }
+                    slot.print_timings_tg();
+                    continue;
                 }
 
                 if (!process_token(result, slot)) {
@@ -3785,6 +4021,10 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
     auto & params = this->params;
 
     try {
+        if (params.experimental_inline_tools && server_inline_tools_request_has_constraints(data)) {
+            throw std::runtime_error("experimental inline tools are incompatible with grammar, JSON schema, and tool-call grammar in this POC");
+        }
+
         std::vector<server_task> tasks;
 
         const auto & prompt = data.at("prompt");

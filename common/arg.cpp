@@ -2933,6 +2933,13 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_UI_MCP_PROXY"));
     add_opt(common_arg(
+        {"--experimental-inline-tools"},
+        "experimental: intercept model-generated inline <tool ...> calls and replace them with allowlisted results (POC; incompatible with grammar/speculative/backend sampling)",
+        [](common_params & params) {
+            params.experimental_inline_tools = true;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_EXPERIMENTAL_INLINE_TOOLS"));
+    add_opt(common_arg(
         {"--tools"}, "TOOL1,TOOL2,...",
         "experimental: whether to enable built-in tools for AI agents - do not enable in untrusted environments (default: no tools)\n"
         "specify \"all\" to enable all tools\n"

@@ -1,3 +1,27 @@
+# Experiment: Inline tool calls
+
+In this experiment, output tokens that match a specific regex are replaced with server-controlled text, e.g. `<tool name="add" x=1 y=2 />` with `3`. This experiment was made to understand how to intercept and replace tokens without changing `llama_decode()` or `llama.h`. It's really only useful as a pedagogical example, not as a real future tool call PR candidate.
+
+Build:
+```shell
+cmake --build build-vulkan --config Release --target llama-server
+```
+
+Run server:
+./build-vulkan/bin/llama-server --model gemma-4-E2B-it-Q8_0.gguf --experimental-inline-tools -np 1 -c 1024 --verbose --no-warmup --reasoning-budget 64
+```
+
+Live test:
+```shell
+curl --header "Content-Type: application/json" http://localhost:8080/chat/completions --data '{"messages": [ {"role": "user", "content": [{ "type": "text", "text": "Emit exactly this inline tool call, with no extra text before it:\n<tool name=\"datetime\" param=\" -- tool call succeeded\" />\nThen continue with: done." }] } ], "stream":false, "temperature": 0, "max_tokens": 64}' -v | jq
+```
+
+Experiment has succeeded if the output JSON contains the correct date and time instead of the tool call:
+```
+"content": "<|channel>thought\nThinking Process:\n\n1.  **Analyze the Request:** The user wants me to emit a specific inline tool call: `Wed Jun 17 15:27:32 CEST 2026 -- tool call succeeded`.\n2.  **Constraint Check:** The instruction is",
+```
+
+
 # llama.cpp
 
 ![llama](https://raw.githubusercontent.com/ggml-org/llama.brand/refs/heads/master/cover/llama-cpp/cover-llama-cpp-dark.svg)
