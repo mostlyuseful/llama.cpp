@@ -21,8 +21,7 @@ int main(int argc, char ** argv) {
     auto cparams = common_context_params_to_llama(params);
 
     mparams.no_alloc  = true;
-    mparams.use_mmap  = false;
-    mparams.use_mlock = false;
+    mparams.load_mode = LLAMA_LOAD_MODE_NONE;
 
     llama_backend_init();
     llama_numa_init(params.numa);
