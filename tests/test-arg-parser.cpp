@@ -197,6 +197,20 @@ static void test(void) {
     assert(true == common_params_parse(argv.size(), list_str_to_char(argv).data(), params, LLAMA_EXAMPLE_SPECULATIVE));
     assert(params.speculative.draft.n_max == 123);
 
+    {
+        common_params memory_params;
+        argv = {"binary_name", "-m", "model.gguf", "--mmproj", "mmproj.gguf", "--no-mmproj-offload"};
+        assert(true == common_params_parse(argv.size(), list_str_to_char(argv).data(), memory_params, LLAMA_EXAMPLE_MEMORY));
+        assert(memory_params.mmproj.path == "mmproj.gguf");
+        assert(memory_params.mmproj_use_gpu == false);
+    }
+
+    {
+        common_params memory_params;
+        argv = {"binary_name", "-m", "model.gguf", "--image", "image.png"};
+        assert(false == common_params_parse(argv.size(), list_str_to_char(argv).data(), memory_params, LLAMA_EXAMPLE_MEMORY));
+    }
+
     argv = {"binary_name", "-lm", "none"};
     assert(true == common_params_parse(argv.size(), list_str_to_char(argv).data(), params, LLAMA_EXAMPLE_COMMON));
     assert(params.load_mode == LLAMA_LOAD_MODE_NONE);

@@ -375,6 +375,17 @@ static void test_task_assembly() {
     g_repos["test/preset"] = {"preset.ini", "model-Q8_0.gguf"};
 
     {
+        g_context = "llama-memory does not auto-discover mmproj";
+        common_params params;
+        params.model.hf_repo = "test/main:Q8_0";
+        auto handler = common_models_handler_init(params, LLAMA_EXAMPLE_MEMORY);
+        params.offline = true;
+        common_models_handler_apply(handler, params);
+        REQUIRE_EQ(params.model.path, cached("test/main", "model-Q8_0.gguf"));
+        REQUIRE(params.mmproj.path.empty());
+    }
+
+    {
         // plain -hf wires the model and its mmproj, nothing speculative
         common_params params;
         assemble({"server", "-hf", "test/main:Q8_0"}, params);

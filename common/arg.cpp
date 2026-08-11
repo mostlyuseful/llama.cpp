@@ -57,11 +57,19 @@
 using json = nlohmann::ordered_json;
 using namespace common_arg_utils;
 
+static std::initializer_list<enum llama_example> mmproj_auto_examples = {
+    LLAMA_EXAMPLE_MTMD,
+    LLAMA_EXAMPLE_SERVER,
+    LLAMA_EXAMPLE_CLI,
+    LLAMA_EXAMPLE_TTS,
+};
+
 static std::initializer_list<enum llama_example> mmproj_examples = {
     LLAMA_EXAMPLE_MTMD,
     LLAMA_EXAMPLE_SERVER,
     LLAMA_EXAMPLE_CLI,
     LLAMA_EXAMPLE_TTS,
+    LLAMA_EXAMPLE_MEMORY,
 };
 
 static std::string read_file(const std::string & fname) {
@@ -381,7 +389,7 @@ common_models_handler common_models_handler_init(const common_params & params, l
 
     // only download mmproj if the current example is using it
     bool use_mmproj = false;
-    for (const auto & ex : mmproj_examples) {
+    for (const auto & ex : mmproj_auto_examples) {
         if (curr_ex == ex) {
             use_mmproj = true;
             break;

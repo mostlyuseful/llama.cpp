@@ -11,6 +11,16 @@ A tool that reports the projected memory required to load a specific GGUF model 
 
 ---
 
+## Multimodal projector estimates
+
+Pass the canonical projector option together with its text model:
+
+```
+./llama-memory -m ~/models/qwen3.5-35b-q4-k-l.gguf --mmproj ~/models/qwen3.5-mmproj-bf16.gguf -c 20000 -ngl 99
+```
+
+The `mmproj` column is the projector weight and worst-case compute estimate reported by MTMD for each backend device. CPU-backed projector memory is included in the Host row. The Host `self` value and the final GPU and Host projected totals include `mmproj`; GPU `total` and `free` remain physical capacity values. Use `--no-mmproj-offload` to estimate the configured CPU-backed projector placement.
+
 ## How llama.cpp Computes Projected Memory
 
 ### The Three Memory Components
@@ -233,7 +243,7 @@ This keeps the two public functions in sync without duplicating logic.
 ```cmake
 set(TARGET llama-memory)
 add_executable(${TARGET} llama-memory.cpp)
-target_link_libraries(${TARGET} PRIVATE llama-common llama ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(${TARGET} PRIVATE llama-common llama mtmd ${CMAKE_THREAD_LIBS_INIT})
 target_compile_features(${TARGET} PRIVATE cxx_std_17)
 
 if(LLAMA_TOOLS_INSTALL)
@@ -255,7 +265,7 @@ add_subdirectory(llama-memory)
 
 ```cpp
 #include "llama.h"
-#include "arg.h"       // common_params_parse, LLAMA_EXAMPLE_COMMON
+#include "arg.h"       // common_params_parse, LLAMA_EXAMPLE_MEMORY
 #include "common.h"    // common_model_params_to_llama, common_context_params_to_llama
 #include "log.h"
 
@@ -270,7 +280,7 @@ int main(int argc, char ** argv) {
     common_params params;
     common_init();
 
-    if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_COMMON)) {
+    if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_MEMORY)) {
         return 1;
     }
 
@@ -389,8 +399,8 @@ int main(int argc, char ** argv) {
 ```
 $ ./llama-memory -m ~/models/qwen3.5-35b-q4-k-l.gguf -c 20000 -ctk f16 -ctv q8_0 -ngl 99
 
-CUDA0 (RTX 4090)               total= 24077 MiB  free=  4890 MiB  model= 17904 MiB  kv=   682 MiB  compute=  898 MiB
-Host                           self=  58271 MiB  model= 58259 MiB  kv=     0 MiB  compute=   12 MiB
+CUDA0 (RTX 4090)               total= 24077 MiB  free=  4890 MiB  model= 17904 MiB  kv=   682 MiB  compute=   898 MiB  mmproj=     0 MiB
+Host                           self=  58271 MiB  model= 58259 MiB  kv=     0 MiB  compute=    12 MiB  mmproj=     0 MiB
 
 Total projected memory: GPU=19484 MiB  Host=58271 MiB
 ```
