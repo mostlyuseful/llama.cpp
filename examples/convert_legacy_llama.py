@@ -1299,11 +1299,11 @@ def default_outfile(model_paths: list[Path], file_type: GGMLFileType, expert_cou
 
 
 def do_dump_model(model_plus: ModelPlus) -> None:
-    print(f"model_plus.paths = {model_plus.paths!r}") # noqa: NP100
-    print(f"model_plus.format = {model_plus.format!r}") # noqa: NP100
-    print(f"model_plus.vocab = {model_plus.vocab!r}") # noqa: NP100
+    print(f"model_plus.paths = {model_plus.paths!r}") # noqa: T201
+    print(f"model_plus.format = {model_plus.format!r}") # noqa: T201
+    print(f"model_plus.vocab = {model_plus.vocab!r}") # noqa: T201
     for name, lazy_tensor in model_plus.model.items():
-        print(f"{name}: shape={lazy_tensor.shape} type={lazy_tensor.data_type}; {lazy_tensor.description}") # noqa: NP100
+        print(f"{name}: shape={lazy_tensor.shape} type={lazy_tensor.data_type}; {lazy_tensor.description}") # noqa: T201
 
 
 def main(args_in: list[str] | None = None) -> None:
@@ -1357,7 +1357,7 @@ def main(args_in: list[str] | None = None) -> None:
         if (metadata is None or metadata.name is None) and params.path_model is not None:
             metadata.name = params.path_model.name
 
-        print(f"{default_convention_outfile(ftype, params.n_experts, model_params_count, metadata)}") # noqa: NP100
+        print(f"{default_convention_outfile(ftype, params.n_experts, model_params_count, metadata)}") # noqa: T201
         return
 
     if args.no_vocab and args.vocab_only:

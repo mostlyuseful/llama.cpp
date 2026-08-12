@@ -153,3 +153,11 @@ a.out.*
 
 AGENTS.local.md
 .pi/SYSTEM.md
+
+# Local tasks
+
+/tasks/
+
+# Pi autopilot state
+
+.pi/autopilot/

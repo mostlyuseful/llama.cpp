@@ -16,7 +16,7 @@ try:
     import git
     from tabulate import tabulate
 except ImportError as e:
-    print("the following Python libraries are required: GitPython, tabulate.") # noqa: NP100
+    print("the following Python libraries are required: GitPython, tabulate.") # noqa: T201
     raise e
 
 
@@ -1094,7 +1094,7 @@ if known_args.plot:
 
     create_performance_plot(table, headers, name_baseline, name_compare, known_args.plot, known_args.plot_x, known_args.plot_log_scale, tool, primary_metric)
 
-print(tabulate( # noqa: NP100
+print(tabulate( # noqa: T201
     table,
     headers=headers,
     floatfmt=".2f",

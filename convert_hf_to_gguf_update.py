@@ -493,6 +493,6 @@ logger.info("\nRun the following commands to generate the vocab files for testin
 for model in models:
     name = model["name"]
 
-    print(f"python3 convert_hf_to_gguf.py models/tokenizers/{name}/ --outfile models/ggml-vocab-{name}.gguf --vocab-only") # noqa: NP100
+    print(f"python3 convert_hf_to_gguf.py models/tokenizers/{name}/ --outfile models/ggml-vocab-{name}.gguf --vocab-only") # noqa: T201
 
 logger.info("\n")

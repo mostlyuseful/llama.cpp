@@ -31,8 +31,8 @@ def get_file_host_endian(reader: GGUFReader) -> tuple[str, str]:
 # please see the comments in the modify_gguf.py example.
 def dump_metadata(reader: GGUFReader, args: argparse.Namespace) -> None:
     host_endian, file_endian = get_file_host_endian(reader)
-    print(f'* File is {file_endian} endian, script is running on a {host_endian} endian host.')  # noqa: NP100
-    print(f'* Dumping {len(reader.fields)} key/value pair(s)')  # noqa: NP100
+    print(f'* File is {file_endian} endian, script is running on a {host_endian} endian host.')  # noqa: T201
+    print(f'* Dumping {len(reader.fields)} key/value pair(s)')  # noqa: T201
     for n, field in enumerate(reader.fields.values(), 1):
         if not field.types:
             pretty_type = 'N/A'
@@ -57,13 +57,13 @@ def dump_metadata(reader: GGUFReader, args: argparse.Namespace) -> None:
                 if len(field.data) > 6:
                     content = content[:-1] + ', ...]'
                 log_message += ' = {0}'.format(content)
-        print(log_message)  # noqa: NP100
+        print(log_message)  # noqa: T201
     if args.no_tensors:
         return
-    print(f'* Dumping {len(reader.tensors)} tensor(s)')  # noqa: NP100
+    print(f'* Dumping {len(reader.tensors)} tensor(s)')  # noqa: T201
     for n, tensor in enumerate(reader.tensors, 1):
         prettydims = ', '.join('{0:5}'.format(d) for d in list(tensor.shape) + [1] * (4 - len(tensor.shape)))
-        print(f'  {n:5}: {tensor.n_elements:10} | {prettydims} | {tensor.tensor_type.name:7} | {tensor.name}')  # noqa: NP100
+        print(f'  {n:5}: {tensor.n_elements:10} | {prettydims} | {tensor.tensor_type.name:7} | {tensor.name}')  # noqa: T201
 
 
 def dump_metadata_json(reader: GGUFReader, args: argparse.Namespace) -> None:
@@ -438,7 +438,7 @@ def dump_markdown_metadata(reader: GGUFReader, args: argparse.Namespace) -> None
         markdown_content += f"Total BPW for {os.path.basename(args.model)}: {total_model_bpw:.4f} bits"
     else:
         markdown_content += f"Total BPW for {os.path.basename(args.model)}: undefined (no elements)"
-    print(markdown_content)  # noqa: NP100
+    print(markdown_content)  # noqa: T201
 
 
 def main() -> None:
@@ -466,9 +466,9 @@ def main() -> None:
     elif args.markdown:
         dump_markdown_metadata(reader, args)
     elif args.data_offset:
-        print(reader.data_offset)  # noqa: NP100
+        print(reader.data_offset)  # noqa: T201
     elif args.data_alignment:
-        print(reader.alignment)  # noqa: NP100
+        print(reader.alignment)  # noqa: T201
     else:
         dump_metadata(reader, args)
 

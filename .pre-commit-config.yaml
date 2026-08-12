@@ -3,14 +3,17 @@
 exclude: prompts/.*.txt
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.6.0
+  rev: v6.0.0
   hooks:
   - id: trailing-whitespace
+    exclude: ^(benches/|docs/development/llama-star/|models/|tools/ui/src/lib/vendors/|tools/ui/tests/stories/fixtures/|vendor/)
   - id: end-of-file-fixer
+    exclude: ^(benches/|docs/development/llama-star/|examples/gguf-hash/deps/|media/|models/|tools/ui/src/lib/vendors/|tools/ui/tests/stories/fixtures/assets/|vendor/|\.clang-format$)
   - id: check-yaml
   - id: check-added-large-files
 - repo: https://github.com/PyCQA/flake8
-  rev: 7.0.0
+  rev: 7.3.0
   hooks:
   -   id: flake8
       additional_dependencies: [flake8-print==5.0.0]
+      exclude: (^|/)(examples|tools)/

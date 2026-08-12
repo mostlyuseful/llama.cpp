@@ -25,10 +25,10 @@ vendor = {
 }
 
 for url, filename in vendor.items():
-    print(f"downloading {url} to {filename}") # noqa: NP100
+    print(f"downloading {url} to {filename}") # noqa: T201
     urllib.request.urlretrieve(url, filename)
 
-print("Splitting httplib.h...") # noqa: NP100
+print("Splitting httplib.h...") # noqa: T201
 try:
     subprocess.check_call([
         sys.executable, "split.py",
@@ -36,7 +36,7 @@ try:
         "--out", "vendor/cpp-httplib"
     ])
 except Exception as e:
-    print(f"Error: {e}") # noqa: NP100
+    print(f"Error: {e}") # noqa: T201
     sys.exit(1)
 finally:
     os.remove("split.py")

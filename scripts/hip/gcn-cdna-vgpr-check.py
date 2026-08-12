@@ -46,7 +46,7 @@ def parse_log_file(filepath):
                             break
                     continue
     except FileNotFoundError:
-        print(f"Error: File {filepath} not found", file=sys.stderr)  # noqa: NP100
+        print(f"Error: File {filepath} not found", file=sys.stderr)  # noqa: T201
         sys.exit(1)
 
     return functions
@@ -54,7 +54,7 @@ def parse_log_file(filepath):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: ./vgpr_check.py <log_file>", file=sys.stderr)  # noqa: NP100
+        print("Usage: ./vgpr_check.py <log_file>", file=sys.stderr)  # noqa: T201
         sys.exit(1)
 
     log_file = sys.argv[1]
@@ -75,7 +75,7 @@ def main():
         total_vgprs = int(data['vgprs']) + int(data['spill'])
         if total_vgprs > 256 and func_name in ignored and func_name not in printed_ignored:
             location = data.get('location', log_file)
-            print(f"{location}: {func_name} - Total VGPRs: {total_vgprs} ({data['vgprs']} + {data['spill']}) [IGNORED]")  # noqa: NP100
+            print(f"{location}: {func_name} - Total VGPRs: {total_vgprs} ({data['vgprs']} + {data['spill']}) [IGNORED]")  # noqa: T201
             printed_ignored.add(func_name)
 
     # Then print new functions with issues in red
@@ -87,7 +87,7 @@ def main():
             # Print in red if not ignored
             color_code = "\033[91m" if func_name not in ignored else ""
             reset_code = "\033[0m" if func_name not in ignored else ""
-            print(f"{color_code}{location}: {func_name} - Total VGPRs: {total_vgprs} ({data['vgprs']} + {data['spill']}) {status}{reset_code}")  # noqa: NP100
+            print(f"{color_code}{location}: {func_name} - Total VGPRs: {total_vgprs} ({data['vgprs']} + {data['spill']}) {status}{reset_code}")  # noqa: T201
             if func_name not in ignored:
                 found_issues = True
 

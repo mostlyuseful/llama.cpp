@@ -67,11 +67,11 @@ def gguf_hash(reader: GGUFReader, filename: str, disable_progress_bar: bool, no_
 
             sha1_layer = hashlib.sha1()
             sha1_layer.update(tensor.data.data)
-            print("sha1      {0}  {1}:{2}".format(sha1_layer.hexdigest(), filename, tensor.name)) # noqa: NP100
+            print("sha1      {0}  {1}:{2}".format(sha1_layer.hexdigest(), filename, tensor.name)) # noqa: T201
 
             sha256_layer = hashlib.sha256()
             sha256_layer.update(tensor.data.data)
-            print("sha256    {0}  {1}:{2}".format(sha256_layer.hexdigest(), filename, tensor.name)) # noqa: NP100
+            print("sha256    {0}  {1}:{2}".format(sha256_layer.hexdigest(), filename, tensor.name)) # noqa: T201
 
         sha1.update(tensor.data.data)
         sha256.update(tensor.data.data)
@@ -81,9 +81,9 @@ def gguf_hash(reader: GGUFReader, filename: str, disable_progress_bar: bool, no_
     bar.close()
 
     # Display Hash Output
-    print("sha1      {0}  {1}".format(sha1.hexdigest(), filename)) # noqa: NP100
-    print("sha256    {0}  {1}".format(sha256.hexdigest(), filename)) # noqa: NP100
-    print("uuid      {0}  {1}".format(uuid.UUID(bytes=uuidv5_sha1.digest()[:16], version=5), filename)) # noqa: NP100
+    print("sha1      {0}  {1}".format(sha1.hexdigest(), filename)) # noqa: T201
+    print("sha256    {0}  {1}".format(sha256.hexdigest(), filename)) # noqa: T201
+    print("uuid      {0}  {1}".format(uuid.UUID(bytes=uuidv5_sha1.digest()[:16], version=5), filename)) # noqa: T201
 
 
 def main() -> None:
